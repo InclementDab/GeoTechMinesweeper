@@ -132,7 +132,8 @@ public:
 		if (!IsExposed) {
 			if (IsFlagged) {
 				// flagged
-				return FSlateIcon(FName("EditorStyle"), "ShowFlagsMenu.Navigation").GetIcon();
+				return FSlateIcon(FName("EditorStyle"), "FontEditor.Tabs.Preview").GetIcon();
+				//return FSlateIcon(FName("EditorStyle"), "ShowFlagsMenu.Navigation").GetIcon();
 			}
 			
 			return nullptr;

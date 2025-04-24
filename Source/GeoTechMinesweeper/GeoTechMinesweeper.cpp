@@ -2,7 +2,9 @@
 
 #include "GeoTechMinesweeper.h"
 
-#include "SSkeletonWidget.h"
+#if WITH_EDITOR
+#include "SListViewSelectorDropdownMenu.h"
+#endif
 #include "Dialog/SMessageDialog.h"
 #include "Modules/ModuleManager.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -15,7 +17,8 @@ IMPLEMENT_PRIMARY_GAME_MODULE(FGeoTechMinesweeperModule, GeoTechMinesweeper, "Ge
 void FGeoTechMinesweeperModule::StartupModule()
 {
 	IModuleInterface::StartupModule();
-	
+
+#if WITH_EDITOR
 	UToolMenu* ToolBar = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.ModesToolBar");
 	check(ToolBar);
 	FToolMenuSection& Section = ToolBar->AddSection("Debug");	
@@ -29,8 +32,11 @@ void FGeoTechMinesweeperModule::StartupModule()
 		return !Minesweeper.IsValid();
 	});
 	
-	const FToolMenuEntry MinesweeperEntry = FToolMenuEntry::InitToolBarButton("MinesweeperButton", FToolUIActionChoice(Action), INVTEXT("Minesweeper"), INVTEXT("Begin procrastinating very important tasks"), FSlateIcon(FName("EditorStyle"), "Level.ScriptIcon16x"));
+	const FToolMenuEntry MinesweeperEntry = FToolMenuEntry::InitToolBarButton("MinesweeperButton", FToolUIActionChoice(Action), INVTEXT("Minesweeper"), INVTEXT("Begin procrastination."), FSlateIcon(FName("EditorStyle"), "Kismet.VariableList.ArrayTypeIcon"));
 	Section.AddEntry(MinesweeperEntry);
+#else
+	StartMinesweeper();
+#endif
 }
 
 void FGeoTechMinesweeperModule::ShutdownModule()
@@ -45,11 +51,18 @@ int FGeoTechMinesweeperModule::StartMinesweeper()
 	if (!App.CanAddModalWindow()) {
 		return -1;
 	}
+
+	static FName NAME_Easy = "Easy";
+	static FName NAME_Medium = "Medium";
+	static FName NAME_Hard = "Hard";
+	static FName NAME_Impossible = "Impossible";
+	static FName NAME_Custom = "Custom...";
+	static TArray<FName> Difficulties = { NAME_Easy, NAME_Medium, NAME_Hard, NAME_Impossible, NAME_Custom };
+	static FName CurrentDifficulty = "Medium";
 	
 	TSharedRef<SWindow> Window = SNew(SWindow)
 		.Title(INVTEXT("Minesweeper"))
-		.MinHeight(640)
-		.MinWidth(800)
+		.ClientSize(FVector2D(800.f, 650.f))
 		.AutoCenter(EAutoCenter::PreferredWorkArea)
 		.SizingRule(ESizingRule::Autosized)
 		[
@@ -64,6 +77,53 @@ int FGeoTechMinesweeperModule::StartMinesweeper()
 				[
 					// Game Header blocks
 					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+						.Padding(FMargin(0.0f, 2.0f, 3.0f, 2.0f))
+						.AutoWidth()
+						.HAlign(HAlign_Left)
+					[
+						SNew(SComboBox<FName>)
+						.OptionsSource(&Difficulties)
+						.OnSelectionChanged_Lambda([this](FName Value, ESelectInfo::Type InSelectInfo) {
+							CurrentDifficulty = Value;
+							if (CurrentDifficulty == NAME_Easy) {
+								GameWidth = 8;
+								GameHeight = 8;
+								GameMineCount = 10;
+							}
+							if (CurrentDifficulty == NAME_Medium) {
+								GameWidth = 16;
+								GameHeight = 16;
+								GameMineCount = 40;
+							}
+							if (CurrentDifficulty == NAME_Hard) {
+								GameWidth = 32;
+								GameHeight = 16;
+								GameMineCount = 99;
+							}
+
+							if (CurrentDifficulty == NAME_Impossible) {
+								GameWidth = 32;
+								GameHeight = 32;
+								GameMineCount = 170;
+							}
+						})
+
+						.OnGenerateWidget_Lambda([this](FName Value) -> TSharedRef<SWidget> {
+							return SNew(STextBlock).Text(FText::FromString(Value.ToString()));
+						})
+						.InitiallySelectedItem(CurrentDifficulty)
+						.IsEnabled_Lambda([this] {
+							return !Minesweeper.IsValid();
+						})
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this] () {
+								return FText::FromString(CurrentDifficulty.ToString());
+							})
+						]
+					]
+					
 					+ SHorizontalBox::Slot()
 					.Padding(FMargin(0.0f, 2.0f, 3.0f, 2.0f))
 					.AutoWidth()
@@ -84,7 +144,7 @@ int FGeoTechMinesweeperModule::StartMinesweeper()
 							GameWidth = FMath::Clamp(NewValue, 1, 256);
 						})
 						.IsEnabled_Lambda([this] {
-							return !Minesweeper.IsValid();
+							return !Minesweeper.IsValid() && CurrentDifficulty == NAME_Custom;
 						})
 					]
 
@@ -108,7 +168,7 @@ int FGeoTechMinesweeperModule::StartMinesweeper()
 							GameHeight = FMath::Clamp(NewValue, 1, 256);
 						})
 						.IsEnabled_Lambda([this] {
-							return !Minesweeper.IsValid();
+							return !Minesweeper.IsValid() && CurrentDifficulty == NAME_Custom;
 						})
 					]
 					
@@ -132,7 +192,7 @@ int FGeoTechMinesweeperModule::StartMinesweeper()
                     		GameMineCount = FMath::Clamp(NewValue, 1, GameHeight * GameWidth);
                     	})
 	                    .IsEnabled_Lambda([this] {
-		                    return !Minesweeper.IsValid();
+	                    	return !Minesweeper.IsValid() && CurrentDifficulty == NAME_Custom;
 	                    })
                     ]
 
@@ -167,19 +227,18 @@ int FGeoTechMinesweeperModule::StartMinesweeper()
 				.AutoHeight()
 				[
 					SAssignNew(GameArea, SBorder)
-					.Padding(5)
+					.Padding(14)
+					.HAlign(HAlign_Center)
 				]
 			]
 		];
 
 
 	const auto Parent = App.FindBestParentWindowForDialogs(nullptr);
-	App.AddModalWindow(Window, Parent);
-
+	App.AddModalWindow(Window, Parent, false);
+	
 	// After modal closed, cleanup
 	Minesweeper.Reset();
-	
-	_CrtDumpMemoryLeaks();
 	
 	return 0;
 }
@@ -291,7 +350,7 @@ bool FMinesweeperGame::SetPlayArea(TSharedPtr<SBorder> Panel)
 		return false;
 	}
 	
-	constexpr double ButtonSizePx = 28.0;
+	constexpr double ButtonSizePx = 32.0;
 	constexpr double ButtonImageRelativeSize = 0.78;
 	const FVector2d ButtonSize(ButtonSizePx, ButtonSizePx);
 	
